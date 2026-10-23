@@ -1,0 +1,45 @@
+{
+    "AA": "OPEN",
+    "AE": "OPEN",
+    "AH": "OPEN",
+    "AY": "OPEN",
+
+    "L": "LIQUID",
+    "R": "LIQUID",
+
+    "EH": "SPREAD",
+    "EY": "SPREAD",
+    "IH": "SPREAD",
+    "IY": "SPREAD",
+    "HH": "SPREAD",
+
+    "TH": "TH",
+
+    "T": "NARROW",
+    "CH": "NARROW",
+    "N": "NARROW",
+    "G": "NARROW",
+    "S": "NARROW",
+    "SH": "NARROW",
+    "Z": "NARROW",
+    "D": "NARROW",
+
+    "V": "LIP_TEETH",
+    "F": "LIP_TEETH",
+
+    "B": "NEUTRAL",
+    "P": "NEUTRAL",
+    "M": "NEUTRAL",
+    "W": "NEUTRAL",
+    "Y": "NEUTRAL",
+
+    "AO": "ROUND",
+    "AW": "ROUND",
+    "OW": "ROUND",
+    "OY": "ROUND",
+
+    "UH": "TIGHT_ROUND",
+    "UW": "TIGHT_ROUND",
+
+    "SIL": "NEUTRAL"
+}
