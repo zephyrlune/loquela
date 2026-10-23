@@ -1,21 +1,18 @@
-# phoneme lipsync
+# loquela
 
-## Run the real-time interface
+Loquela is a desktop app that listens to live audio, predicts phonemes, and maps them to visemes. It displays the current viseme and a grid of viseme images, with a separate preview window for OBS.
 
-Install the project dependencies and the PySide6 interface dependency:
+## Run
+
+Install the dependencies and start the app:
 
 ```powershell
-python -m pip install -r requirements-ui.txt
+python -m pip install -r requirements.txt
 python -m src.main
 ```
 
-The app uses the trained checkpoint at
-`models/best_cnn_lstm_128_dropout_04_cnn_3.pt`, the phoneme-to-viseme
-mapping in `src/viseme_mapping.json`, and the default artwork in
-`assets/visemes`. The interface shows all nine visemes in a 3×3 grid beside
-the live preview. Enable **Enable custom viseme images** to activate the
-per-viseme image buttons; selected files are saved in `assets/custom_visemes`
-and replace the corresponding default image while custom images are enabled.
+The app uses the model in `models/` and the phoneme-to-viseme mapping in `src/viseme_mapping.json`. A working microphone is required.
 
-For OBS, click **Open OBS preview** and add a **Window Capture** source for
-the separate **LipSync OBS Preview** window.
+To use the preview in OBS, click **Open OBS preview** and add a **Window Capture** source for the **loquela OBS Preview** window.
+
+You can enable custom viseme images in the app and select replacements for the defaults. Custom images are saved in `assets/custom_visemes`.

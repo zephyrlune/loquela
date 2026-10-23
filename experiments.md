@@ -596,14 +596,4 @@ The experiment suggests that simply increasing temporal context is not an effect
 The previous deeper CNN + LSTM-128 architecture with 1.0-second context remains the stronger practical configuration because it achieves comparable validation accuracy with less temporal computation.
 
 
-### Next Experiment
-
-The next experiment will investigate **audio augmentation** rather than increasing model capacity or temporal context.
-
-The goal is to improve robustness to conditions that differ from the relatively clean LibriSpeech recordings used for training.
-
-Training samples will be augmented with realistic variations such as background noise, gain/volume changes, and mild speaking-rate variation.
-
-The model architecture will remain the deeper CNN + LSTM-128 + dropout-0.4 architecture with approximately 1.0 second of context.
-
 

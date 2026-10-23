@@ -8,7 +8,14 @@ from pathlib import Path
 
 import sounddevice as sd
 from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QCloseEvent, QImageReader, QPixmap, QResizeEvent
+from PySide6.QtGui import (
+    QCloseEvent,
+    QFont,
+    QFontDatabase,
+    QImageReader,
+    QPixmap,
+    QResizeEvent,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -113,7 +120,7 @@ class ObsPreviewWindow(QLabel):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("LipSync OBS Preview")
+        self.setWindowTitle("loquela OBS Preview")
         self.setWindowFlags(
             Qt.Window
             | Qt.WindowStaysOnTopHint
@@ -164,7 +171,7 @@ class MainWindow(QMainWindow):
         self.viseme_edit_buttons: dict[str, QPushButton] = {}
         self._close_requested = False
 
-        self.setWindowTitle("Real-time Phoneme Lip Sync")
+        self.setWindowTitle("loquela")
         self.resize(1180, 850)
 
         central_widget = QWidget()
@@ -173,10 +180,20 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(28, 24, 28, 24)
         root_layout.setSpacing(18)
 
-        title = QLabel("Real-time Lip Sync")
-        title.setObjectName("title")
+        title = QLabel("loquela")
+        title.setObjectName("wordmark")
+        font_path = PROJECT_ROOT / "assets" / "fonts" / "Michroma-Regular.ttf"
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        font_families = QFontDatabase.applicationFontFamilies(font_id)
+        if not font_families:
+            raise RuntimeError(f"Could not load Michroma font: {font_path}")
+        wordmark_font = QFont(font_families[0])
+        wordmark_font.setWeight(QFont.Weight.Bold)
+        wordmark_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 3)
+        title.setFont(wordmark_font)
+
         subtitle = QLabel(
-            "Use default visemes or choose your own"
+            "Real time lip syncing, use default visemes or choose your own"
         )
         subtitle.setObjectName("subtitle")
         root_layout.addWidget(title)
@@ -305,9 +322,9 @@ class MainWindow(QMainWindow):
                 color: #e5e5e5;
                 font-size: 14px;
             }
-            QLabel#title {
-                font-size: 26px;
-                font-weight: 700;
+            QLabel#wordmark {
+                color: #ffffff;
+                font-size: 50px;
             }
             QLabel#subtitle {
                 color: #aaaaaa;
