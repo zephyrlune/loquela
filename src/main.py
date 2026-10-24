@@ -1,4 +1,5 @@
 import json
+import math
 import queue
 import shutil
 import sys
@@ -26,7 +27,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -41,15 +44,26 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
 class InferenceWorker(QThread):
     prediction_ready = Signal(str, float, object)
+    input_level_changed = Signal(int)
     error_occurred = Signal(str)
 
-    def __init__(self, device_index: int | None) -> None:
+    def __init__(
+        self,
+        device_index: int | None,
+        noise_gate_dbfs: int,
+    ) -> None:
         super().__init__()
         self.device_index = device_index
+        self.noise_gate_dbfs = noise_gate_dbfs
+        self._noise_gate_lock = threading.Lock()
         self._stop_event = threading.Event()
 
     def stop(self) -> None:
         self._stop_event.set()
+
+    def set_noise_gate_dbfs(self, threshold: int) -> None:
+        with self._noise_gate_lock:
+            self.noise_gate_dbfs = threshold
 
     def run(self) -> None:
         try:
@@ -67,6 +81,15 @@ class InferenceWorker(QThread):
 
             def audio_callback(indata, *_) -> None:
                 samples = indata[:, 0].copy()
+                rms = float((samples * samples).mean() ** 0.5)
+                level_dbfs = 20 * math.log10(max(rms, 1e-6))
+                self.input_level_changed.emit(
+                    max(0, min(100, round((level_dbfs + 60) * 100 / 60)))
+                )
+                with self._noise_gate_lock:
+                    noise_gate_dbfs = self.noise_gate_dbfs
+                if level_dbfs < noise_gate_dbfs:
+                    samples.fill(0)
                 try:
                     audio_queue.put_nowait(samples)
                 except queue.Full:
@@ -123,13 +146,15 @@ class ObsPreviewWindow(QLabel):
         self.setWindowTitle("loquela OBS Preview")
         self.setWindowFlags(
             Qt.Window
+            | Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
             | Qt.WindowCloseButtonHint
             | Qt.WindowMinMaxButtonsHint
         )
         self.setMinimumSize(320, 240)
         self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("background-color: #101010; color: #bdbdbd;")
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background-color: transparent; color: #181818;")
         self.setText("Waiting for viseme")
         self._source_pixmap = QPixmap()
 
@@ -220,7 +245,7 @@ class MainWindow(QMainWindow):
         self.viseme_grid.setContentsMargins(0, 0, 0, 0)
         self.viseme_grid.setHorizontalSpacing(10)
         self.viseme_grid.setVerticalSpacing(10)
-        for column in range(3):
+        for column in range(4):
             self.viseme_grid.setColumnStretch(column, 1)
         viseme_layout.addLayout(self.viseme_grid)
 
@@ -234,6 +259,7 @@ class MainWindow(QMainWindow):
             image_label = QLabel()
             image_label.setAlignment(Qt.AlignCenter)
             image_label.setFixedSize(120, 64)
+            image_label.setStyleSheet("background-color: #ffffff;")
             card_layout.addWidget(image_label, alignment=Qt.AlignHCenter)
 
             name_label = QLabel(viseme)
@@ -242,6 +268,7 @@ class MainWindow(QMainWindow):
             card_layout.addWidget(name_label)
 
             edit_button = QPushButton("Choose image…")
+            edit_button.setObjectName("visemeEdit")
             edit_button.setEnabled(False)
             edit_button.clicked.connect(
                 lambda *_, name=viseme: self._import_viseme_image(
@@ -253,7 +280,7 @@ class MainWindow(QMainWindow):
             self.viseme_cards[viseme] = card
             self.viseme_image_labels[viseme] = image_label
             self.viseme_edit_buttons[viseme] = edit_button
-            self.viseme_grid.addWidget(card, index // 3, index % 3)
+            self.viseme_grid.addWidget(card, index // 4, index % 4)
 
         workspace_row.addWidget(viseme_panel)
 
@@ -269,8 +296,8 @@ class MainWindow(QMainWindow):
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setMinimumSize(440, 200)
         self.preview_label.setStyleSheet(
-            "background-color: #101010; border: 1px solid #454545; "
-            "border-radius: 12px; color: #bdbdbd;"
+            "background-color: #ffffff; border: 1px solid #454545; "
+            "border-radius: 12px; color: #181818;"
         )
         preview_layout.addWidget(self.preview_label, 1)
         workspace_row.addWidget(preview_panel, 1)
@@ -289,6 +316,42 @@ class MainWindow(QMainWindow):
         self.refresh_devices_button.clicked.connect(self._refresh_devices)
         audio_row.addWidget(self.refresh_devices_button)
         root_layout.addLayout(audio_row)
+
+        input_row = QHBoxLayout()
+        input_row.addWidget(QLabel("Mic level"))
+        self.input_level_bar = QProgressBar()
+        self.input_level_bar.setObjectName("inputLevel")
+        self.input_level_bar.setRange(0, 100)
+        self.input_level_bar.setValue(0)
+        self.input_level_bar.setTextVisible(False)
+        self.input_level_bar.setFixedHeight(18)
+        self.input_level_bar.setAccessibleName("Microphone input level")
+        meter_control = QWidget()
+        meter_control.setMinimumHeight(28)
+        meter_layout = QGridLayout(meter_control)
+        meter_layout.setContentsMargins(0, 0, 0, 0)
+        meter_layout.setSpacing(0)
+        meter_layout.addWidget(self.input_level_bar, 0, 0)
+        input_row.addWidget(meter_control, 1)
+        self.noise_gate_slider = QSlider(Qt.Horizontal)
+        self.noise_gate_slider.setObjectName("noiseGate")
+        self.noise_gate_slider.setRange(-60, 0)
+        self.noise_gate_slider.setValue(-45)
+        self.noise_gate_slider.setAccessibleName("Noise gate threshold")
+        self.noise_gate_slider.setToolTip(
+            "Audio quieter than this threshold is muted."
+        )
+        self.noise_gate_slider.valueChanged.connect(
+            self._noise_gate_changed
+        )
+        meter_layout.addWidget(self.noise_gate_slider, 0, 0)
+        input_row.addWidget(QLabel("Noise gate"))
+        self.noise_gate_value = QLabel()
+        input_row.addWidget(self.noise_gate_value)
+        input_row.addWidget(QLabel("Quieter input is muted"))
+        root_layout.addLayout(input_row)
+
+        self._noise_gate_changed(self.noise_gate_slider.value())
 
         button_row = QHBoxLayout()
         self.start_button = QPushButton("Start listening")
@@ -341,6 +404,38 @@ class MainWindow(QMainWindow):
             QLabel#visemeName {
                 font-weight: 600;
             }
+            QProgressBar#inputLevel {
+                min-height: 16px;
+                border: 1px solid #414141;
+                border-radius: 5px;
+                background-color: #292929;
+            }
+            QProgressBar#inputLevel::chunk {
+                border-radius: 4px;
+                background-color: #43d17b;
+            }
+            QSlider#noiseGate {
+                min-height: 28px;
+                background-color: transparent;
+            }
+            QSlider#noiseGate::groove:horizontal {
+                height: 18px;
+                background-color: transparent;
+            }
+            QSlider#noiseGate::handle:horizontal {
+                width: 14px;
+                margin: 0;
+                border: 1px solid #d0d0d0;
+                border-radius: 7px;
+                background-color: #f0f0f0;
+            }
+            QSlider#noiseGate::sub-page:horizontal {
+                border-radius: 2px;
+                background-color: #f39c12;
+            }
+            QSlider#noiseGate::add-page:horizontal {
+                background-color: transparent;
+            }
             QWidget#visemeCard {
                 border: 1px solid #414141;
                 border-radius: 8px;
@@ -373,6 +468,12 @@ class MainWindow(QMainWindow):
             }
             QPushButton {
                 color: #e5e5e5;
+            }
+            QPushButton#visemeEdit {
+                min-height: 20px;
+                max-height: 22px;
+                padding: 0 3px;
+                font-size: 10px;
             }
             QPushButton:hover, QComboBox:hover {
                 border-color: #777777;
@@ -470,8 +571,12 @@ class MainWindow(QMainWindow):
         if self.worker is not None and self.worker.isRunning():
             return
 
-        self.worker = InferenceWorker(self.microphone_combo.currentData())
+        self.worker = InferenceWorker(
+            self.microphone_combo.currentData(),
+            self.noise_gate_slider.value(),
+        )
         self.worker.prediction_ready.connect(self._show_prediction)
+        self.worker.input_level_changed.connect(self.input_level_bar.setValue)
         self.worker.error_occurred.connect(self._show_worker_error)
         self.worker.finished.connect(self._worker_finished)
         self.start_button.setEnabled(False)
@@ -494,10 +599,16 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.microphone_combo.setEnabled(True)
         self.refresh_devices_button.setEnabled(True)
+        self.input_level_bar.setValue(0)
         if self.status_label.text() not in ("Microphone or inference error",):
             self.status_label.setText("Ready")
         if self._close_requested:
             self.close()
+
+    def _noise_gate_changed(self, threshold: int) -> None:
+        self.noise_gate_value.setText(f"{threshold} dBFS")
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.set_noise_gate_dbfs(threshold)
 
     def _show_worker_error(self, message: str) -> None:
         self.status_label.setText("Microphone or inference error")
