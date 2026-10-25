@@ -5,15 +5,21 @@ import shutil
 import sys
 import tempfile
 import threading
+import traceback
 from pathlib import Path
 
 import sounddevice as sd
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import (
+    QColor,
     QCloseEvent,
     QFont,
     QFontDatabase,
+    QIcon,
     QImageReader,
+    QMouseEvent,
+    QPaintEvent,
+    QPainter,
     QPixmap,
     QResizeEvent,
 )
@@ -36,6 +42,7 @@ from PySide6.QtWidgets import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+APP_ICON_PATH = PROJECT_ROOT / "icon.ico"
 DEFAULT_VISEME_DIR = PROJECT_ROOT / "assets" / "visemes"
 CUSTOM_VISEME_DIR = PROJECT_ROOT / "assets" / "custom_visemes"
 MAPPING_PATH = Path(__file__).resolve().with_name("viseme_mapping.json")
@@ -45,6 +52,7 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 class InferenceWorker(QThread):
     prediction_ready = Signal(str, float, object)
     input_level_changed = Signal(int)
+    status_changed = Signal(str)
     error_occurred = Signal(str)
 
     def __init__(
@@ -67,6 +75,7 @@ class InferenceWorker(QThread):
 
     def run(self) -> None:
         try:
+            self.status_changed.emit("Loading model and audio libraries…")
             from src.inference import (
                 HOP_LENGTH,
                 SAMPLE_RATE,
@@ -99,7 +108,9 @@ class InferenceWorker(QThread):
                         pass
                     audio_queue.put_nowait(samples)
 
+            self.status_changed.emit("Preparing audio features…")
             cache = RollingMelCache()
+            self.status_changed.emit("Opening microphone…")
             with sd.InputStream(
                 device=self.device_index,
                 samplerate=SAMPLE_RATE,
@@ -135,7 +146,50 @@ class InferenceWorker(QThread):
                     )
         except Exception as exc:
             if not self._stop_event.is_set():
-                self.error_occurred.emit(str(exc))
+                self.error_occurred.emit(
+                    f"{exc}\n\n{traceback.format_exc()}"
+                )
+
+
+class PreviewTitleBar(QWidget):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("previewTitleBar")
+        self.setFixedHeight(32)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 4, 0)
+        layout.setSpacing(6)
+
+        title = QLabel("loquela OBS Preview")
+        title.setObjectName("previewTitle")
+        title.setAttribute(Qt.WA_TransparentForMouseEvents)
+        layout.addWidget(title, 1)
+
+        minimize_button = QPushButton("_")
+        minimize_button.setAccessibleName("Minimize OBS preview")
+        minimize_button.setToolTip("Minimize")
+        minimize_button.setFixedSize(28, 24)
+        minimize_button.clicked.connect(parent.showMinimized)
+        layout.addWidget(minimize_button)
+
+        close_button = QPushButton("x")
+        close_button.setAccessibleName("Close OBS preview")
+        close_button.setToolTip("Close")
+        close_button.setFixedSize(28, 24)
+        close_button.clicked.connect(parent.close)
+        layout.addWidget(close_button)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#181818"))
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.LeftButton:
+            window_handle = self.window().windowHandle()
+            if window_handle is not None:
+                window_handle.startSystemMove()
+        super().mousePressEvent(event)
 
 
 class ObsPreviewWindow(QLabel):
@@ -144,19 +198,22 @@ class ObsPreviewWindow(QLabel):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("loquela OBS Preview")
-        self.setWindowFlags(
-            Qt.Window
-            | Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
-            | Qt.WindowCloseButtonHint
-            | Qt.WindowMinMaxButtonsHint
-        )
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setMinimumSize(320, 240)
         self.setAlignment(Qt.AlignCenter)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet("background-color: transparent; color: #181818;")
+        self.setContentsMargins(0, 32, 0, 0)
+        self.setStyleSheet(
+            "background-color: transparent; color: #ffffff;"
+            "QLabel#previewTitle { background-color: transparent; color: #ffffff; }"
+            "QPushButton { background-color: rgba(55, 55, 55, 210); color: #ffffff;"
+            "border: 1px solid rgba(220, 220, 220, 100); border-radius: 3px; }"
+            "QPushButton:hover { background-color: rgba(100, 100, 100, 230); }"
+        )
         self.setText("Waiting for viseme")
         self._source_pixmap = QPixmap()
+        self._title_bar = PreviewTitleBar(self)
+        self.resize(640, 480)
 
     def set_source_pixmap(self, pixmap: QPixmap) -> None:
         self._source_pixmap = pixmap
@@ -164,6 +221,7 @@ class ObsPreviewWindow(QLabel):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
+        self._title_bar.setGeometry(0, 0, self.width(), 32)
         self._update_scaled_pixmap()
 
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -577,6 +635,7 @@ class MainWindow(QMainWindow):
         )
         self.worker.prediction_ready.connect(self._show_prediction)
         self.worker.input_level_changed.connect(self.input_level_bar.setValue)
+        self.worker.status_changed.connect(self.status_label.setText)
         self.worker.error_occurred.connect(self._show_worker_error)
         self.worker.finished.connect(self._worker_finished)
         self.start_button.setEnabled(False)
@@ -612,11 +671,15 @@ class MainWindow(QMainWindow):
 
     def _show_worker_error(self, message: str) -> None:
         self.status_label.setText("Microphone or inference error")
-        QMessageBox.critical(
-            self,
+        error_dialog = QMessageBox(
+            QMessageBox.Critical,
             "Could not start lip sync",
-            message,
+            "The microphone or inference worker stopped with an error.",
+            QMessageBox.Ok,
+            self,
         )
+        error_dialog.setDetailedText(message)
+        error_dialog.exec()
 
     def _show_prediction(
         self,
@@ -835,6 +898,7 @@ def main() -> int:
         sys.path.insert(0, str(PROJECT_ROOT))
 
     application = QApplication(sys.argv)
+    application.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     try:
         with MAPPING_PATH.open(encoding="utf-8") as mapping_file:
             viseme_mapping = json.load(mapping_file)
