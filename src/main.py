@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import queue
 import shutil
 import sys
@@ -42,10 +43,18 @@ from PySide6.QtWidgets import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-APP_ICON_PATH = PROJECT_ROOT / "icon.ico"
-DEFAULT_VISEME_DIR = PROJECT_ROOT / "assets" / "visemes"
-CUSTOM_VISEME_DIR = PROJECT_ROOT / "assets" / "custom_visemes"
-MAPPING_PATH = Path(__file__).resolve().with_name("viseme_mapping.json")
+RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
+APP_ICON_PATH = RESOURCE_ROOT / "icon.ico"
+DEFAULT_VISEME_DIR = RESOURCE_ROOT / "assets" / "visemes"
+if getattr(sys, "frozen", False):
+    CUSTOM_VISEME_DIR = (
+        Path(os.environ.get("APPDATA", Path.home()))
+        / "Loquela"
+        / "custom_visemes"
+    )
+else:
+    CUSTOM_VISEME_DIR = PROJECT_ROOT / "assets" / "custom_visemes"
+MAPPING_PATH = RESOURCE_ROOT / "src" / "viseme_mapping.json"
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
 
@@ -265,7 +274,7 @@ class MainWindow(QMainWindow):
 
         title = QLabel("loquela")
         title.setObjectName("wordmark")
-        font_path = PROJECT_ROOT / "assets" / "fonts" / "Michroma-Regular.ttf"
+        font_path = RESOURCE_ROOT / "assets" / "fonts" / "Michroma-Regular.ttf"
         font_id = QFontDatabase.addApplicationFont(str(font_path))
         font_families = QFontDatabase.applicationFontFamilies(font_id)
         if not font_families:

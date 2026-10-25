@@ -31,6 +31,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!packaging/loquela.spec
 
 # Installer logs
 pip-log.txt
@@ -185,10 +186,6 @@ data/
 
 # Trained models
 checkpoints/
-models/
-*.pt
-*.pth
-*.ckpt
 
 # Experiment outputs
 runs/
