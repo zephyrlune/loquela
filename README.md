@@ -4,11 +4,40 @@ https://github.com/user-attachments/assets/c6b91acd-8f3d-481f-afc4-67b9d11d6ca3
 
 Loquela listens to a selected microphone, predicts phonemes from live audio, and displays a corresponding viseme image. The interface shows the current prediction, microphone level, and available visemes.
 
+## Tech Stack
+
+- **Language:** Python
+- **Machine Learning:** PyTorch
+- **GUI:** PySide6
+- **Audio Processing:** Log-mel spectrograms
+- **Model Architecture:** CNN-LSTM
+- **Data:** Approximately 100 hours of ARPABET-transcribed audiobook speech data
+- **Acceleration:** CUDA (with CPU fallback)
+
+## Dataset
+
+The model was trained using approximately 100 hours of
+ARPABET-transcribed and pre-aligned audiobook speech data.
+
+- **Source:** [librispeech-segment](https://huggingface.co/datasets/changelinglab/librispeech-segment)
+
 ## How it works
 
 Audio is captured as mono at 16 kHz. The app keeps a rolling one-second audio window and converts it into an 80-bin log-mel spectrogram with 49 time frames. A CNN-LSTM model predicts a phoneme for the latest frame. The mapping in `src/viseme_mapping.json` maps phonemes to viseme names, and the app displays the matching image from `assets/visemes`.
 
 The model in `models/best_cnn_lstm_128_dropout_04_cnn_3.pt` has three convolutional layers with 32, 64, and 128 channels. The CNN extracts features from the spectrogram, a 128-unit LSTM processes them over time, followed by dropout and a linear classifier for 41 phoneme classes. Inference uses CUDA when PyTorch reports it is available, otherwise it uses the CPU.
+
+## Model Performance
+
+The best-performing configuration achieved:
+
+- **Validation accuracy:** 74.02%
+- **Classification task:** 41-class phoneme classification
+- **Architecture:** Three-layer CNN-LSTM
+- **Input:** 80-bin log-mel spectrograms with a one-second audio context
+
+Multiple CNN-GRU and CNN-LSTM configurations were experimented with,
+varying recurrent hidden sizes, CNN depth, dropout, and temporal context.
 
 ## Microphone and noise gate
 
