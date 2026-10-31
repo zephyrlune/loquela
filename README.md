@@ -1,5 +1,7 @@
 # loquela
 
+https://github.com/user-attachments/assets/c6b91acd-8f3d-481f-afc4-67b9d11d6ca3
+
 Loquela listens to a selected microphone, predicts phonemes from live audio, and displays a corresponding viseme image. The interface shows the current prediction, microphone level, and available visemes.
 
 ## How it works
